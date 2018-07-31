@@ -120,7 +120,7 @@ public class PrestoConnection
             throws SQLException
     {
         checkOpen();
-        String name = "statement" + nextStatementId.getAndIncrement();
+        String name = "statement";//+ nextStatementId.getAndIncrement();
         return new PrestoPreparedStatement(this, name, sql);
     }
 
