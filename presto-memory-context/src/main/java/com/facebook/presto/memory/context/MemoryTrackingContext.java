@@ -25,20 +25,20 @@ import static java.util.Objects.requireNonNull;
 
 /**
  * This class is used to track memory usage at all levels (operator, driver, pipeline, etc.).
- *
+ * <p>
  * At every level we have three aggregate and three local memory contexts. The local memory contexts
  * track the allocations in the current level while the aggregate memory contexts aggregate the memory
  * allocated by the leaf levels and the current level.
- *
+ * <p>
  * The reason we have local memory contexts at every level is that not all the
  * allocations are done by the leaf levels (e.g., at the pipeline level exchange clients
  * can do system allocations directly, see the ExchangeOperator, another example is the buffers
  * doing system allocations at the task context level, etc.).
- *
+ * <p>
  * As another example, at the pipeline level there will be system allocations initiated by the operator context
  * and there will be system allocations initiated by the exchange clients (local allocations). All these system
  * allocations will be visible in the systemAggregateMemoryContext.
- *
+ * <p>
  * To perform local allocations clients should use localUserMemoryContext()/localSystemMemoryContext()
  * and get a reference to the local memory contexts. Clients can also use updateUserMemory()/tryReserveUserMemory()
  * to allocate memory (non-local allocations), which will be reflected to all ancestors of this context in the hierarchy.
@@ -81,19 +81,19 @@ public final class MemoryTrackingContext
 
     public LocalMemoryContext localUserMemoryContext()
     {
-        verify(userLocalMemoryContext != null, "local memory contexts are not initalized");
+        verify(userLocalMemoryContext != null, "local memory contexts are not initialized");
         return userLocalMemoryContext;
     }
 
     public LocalMemoryContext localSystemMemoryContext()
     {
-        verify(systemLocalMemoryContext != null, "local memory contexts are not initalized");
+        verify(systemLocalMemoryContext != null, "local memory contexts are not initialized");
         return systemLocalMemoryContext;
     }
 
     public LocalMemoryContext localRevocableMemoryContext()
     {
-        verify(revocableLocalMemoryContext != null, "local memory contexts are not initalized");
+        verify(revocableLocalMemoryContext != null, "local memory contexts are not initialized");
         return revocableLocalMemoryContext;
     }
 
@@ -141,7 +141,7 @@ public final class MemoryTrackingContext
     }
 
     /**
-     * This method has to be called to initalize the local memory contexts. Otherwise, calls to methods
+     * This method has to be called to initialize the local memory contexts. Otherwise, calls to methods
      * localUserMemoryContext(), localSystemMemoryContext(), etc. will fail.
      */
     public void initializeLocalMemoryContexts(String allocationTag)

@@ -13,9 +13,8 @@
  */
 package com.facebook.presto.execution.buffer;
 
-import com.facebook.presto.OutputBuffers;
-import com.facebook.presto.OutputBuffers.OutputBufferId;
 import com.facebook.presto.execution.StateMachine;
+import com.facebook.presto.execution.buffer.OutputBuffers.OutputBufferId;
 import com.facebook.presto.memory.context.AggregatedMemoryContext;
 import com.facebook.presto.memory.context.MemoryReservationHandler;
 import com.facebook.presto.memory.context.SimpleLocalMemoryContext;
@@ -31,13 +30,9 @@ import org.testng.annotations.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 
-import static com.facebook.presto.OutputBuffers.BROADCAST_PARTITION_ID;
-import static com.facebook.presto.OutputBuffers.BufferType.BROADCAST;
-import static com.facebook.presto.OutputBuffers.createInitialEmptyOutputBuffers;
 import static com.facebook.presto.execution.buffer.BufferResult.emptyResults;
 import static com.facebook.presto.execution.buffer.BufferState.OPEN;
 import static com.facebook.presto.execution.buffer.BufferState.TERMINAL_BUFFER_STATES;
@@ -56,6 +51,9 @@ import static com.facebook.presto.execution.buffer.BufferTestUtils.enqueuePage;
 import static com.facebook.presto.execution.buffer.BufferTestUtils.getBufferResult;
 import static com.facebook.presto.execution.buffer.BufferTestUtils.getFuture;
 import static com.facebook.presto.execution.buffer.BufferTestUtils.sizeOfPages;
+import static com.facebook.presto.execution.buffer.OutputBuffers.BROADCAST_PARTITION_ID;
+import static com.facebook.presto.execution.buffer.OutputBuffers.BufferType.BROADCAST;
+import static com.facebook.presto.execution.buffer.OutputBuffers.createInitialEmptyOutputBuffers;
 import static com.facebook.presto.execution.buffer.TestingPagesSerdeFactory.testingPagesSerde;
 import static com.facebook.presto.memory.context.AggregatedMemoryContext.newRootAggregatedMemoryContext;
 import static com.facebook.presto.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
@@ -1063,13 +1061,13 @@ public class TestBroadcastOutputBuffer
         }
 
         @Override
-        public ListenableFuture<?> reserveMemory(Optional<String> allocationTag, long delta)
+        public ListenableFuture<?> reserveMemory(String allocationTag, long delta)
         {
             return blockedFuture;
         }
 
         @Override
-        public boolean tryReserveMemory(Optional<String> allocationTag, long delta)
+        public boolean tryReserveMemory(String allocationTag, long delta)
         {
             return true;
         }
@@ -1089,6 +1087,7 @@ public class TestBroadcastOutputBuffer
                 () -> memoryContext.newLocalMemoryContext("test"),
                 notificationExecutor);
         buffer.setOutputBuffers(outputBuffers);
+        buffer.registerLifespanCompletionCallback(ignore -> {});
         return buffer;
     }
 
@@ -1150,6 +1149,7 @@ public class TestBroadcastOutputBuffer
                 () -> new SimpleLocalMemoryContext(newSimpleAggregatedMemoryContext(), "test"),
                 stateNotificationExecutor);
         buffer.setOutputBuffers(outputBuffers);
+        buffer.registerLifespanCompletionCallback(ignore -> {});
         return buffer;
     }
 

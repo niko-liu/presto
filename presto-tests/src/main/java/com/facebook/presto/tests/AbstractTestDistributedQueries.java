@@ -17,6 +17,7 @@ import com.facebook.presto.Session;
 import com.facebook.presto.SystemSessionProperties;
 import com.facebook.presto.execution.QueryInfo;
 import com.facebook.presto.execution.QueryManager;
+import com.facebook.presto.server.BasicQueryInfo;
 import com.facebook.presto.spi.security.Identity;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.JoinDistributionType;
 import com.facebook.presto.testing.MaterializedResult;
@@ -65,6 +66,7 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.stream.Collectors.toList;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 public abstract class AbstractTestDistributedQueries
@@ -76,6 +78,11 @@ public abstract class AbstractTestDistributedQueries
     }
 
     protected boolean supportsViews()
+    {
+        return true;
+    }
+
+    protected boolean supportsNotNullColumns()
     {
         return true;
     }
@@ -332,6 +339,45 @@ public abstract class AbstractTestDistributedQueries
     }
 
     @Test
+    public void testInsertIntoNotNullColumn()
+    {
+        skipTestUnless(supportsNotNullColumns());
+
+        String catalog = getSession().getCatalog().get();
+        String createTableStatement = "CREATE TABLE " + catalog + ".tpch.test_not_null_with_insert (\n" +
+                "   column_a date,\n" +
+                "   column_b date NOT NULL\n" +
+                ")";
+        assertUpdate("CREATE TABLE test_not_null_with_insert (column_a DATE, column_b DATE NOT NULL)");
+        assertQuery(
+                "SHOW CREATE TABLE test_not_null_with_insert",
+                "VALUES '" + createTableStatement + "'");
+
+        assertQueryFails("INSERT INTO test_not_null_with_insert (column_a) VALUES (date '2012-12-31')", "(?s).*column_b.*null.*");
+        assertQueryFails("INSERT INTO test_not_null_with_insert (column_a, column_b) VALUES (date '2012-12-31', null)", "(?s).*column_b.*null.*");
+
+        assertUpdate("ALTER TABLE test_not_null_with_insert ADD COLUMN column_c BIGINT NOT NULL");
+        assertQuery(
+                "SHOW CREATE TABLE test_not_null_with_insert",
+                "VALUES 'CREATE TABLE " + catalog + ".tpch.test_not_null_with_insert (\n" +
+                        "   column_a date,\n" +
+                        "   column_b date NOT NULL,\n" +
+                        "   column_c bigint NOT NULL\n" +
+                        ")'");
+
+        assertQueryFails("INSERT INTO test_not_null_with_insert (column_b) VALUES (date '2012-12-31')", "(?s).*column_c.*null.*");
+        assertQueryFails("INSERT INTO test_not_null_with_insert (column_b, column_c) VALUES (date '2012-12-31', null)", "(?s).*column_c.*null.*");
+
+        assertUpdate("INSERT INTO test_not_null_with_insert (column_b, column_c) VALUES (date '2012-12-31', 1)", 1);
+        assertUpdate("INSERT INTO test_not_null_with_insert (column_a, column_b, column_c) VALUES (date '2013-01-01', date '2013-01-02', 2)", 1);
+        assertQuery(
+                "SELECT * FROM test_not_null_with_insert",
+                "VALUES ( NULL, CAST ('2012-12-31' AS DATE), 1 ), ( CAST ('2013-01-01' AS DATE), CAST ('2013-01-02' AS DATE), 2 );");
+
+        assertUpdate("DROP TABLE test_not_null_with_insert");
+    }
+
+    @Test
     public void testRenameTable()
     {
         assertUpdate("CREATE TABLE test_rename AS SELECT 123 x", 1);
@@ -394,7 +440,7 @@ public abstract class AbstractTestDistributedQueries
         assertUpdate("INSERT INTO test_add_column SELECT * FROM test_add_column_a", 1);
         MaterializedResult materializedRows = computeActual("SELECT x, a FROM test_add_column ORDER BY x");
         assertEquals(materializedRows.getMaterializedRows().get(0).getField(0), 123);
-        assertEquals(materializedRows.getMaterializedRows().get(0).getField(1), null);
+        assertNull(materializedRows.getMaterializedRows().get(0).getField(1));
         assertEquals(materializedRows.getMaterializedRows().get(1).getField(0), 234);
         assertEquals(materializedRows.getMaterializedRows().get(1).getField(1), 111L);
 
@@ -402,11 +448,11 @@ public abstract class AbstractTestDistributedQueries
         assertUpdate("INSERT INTO test_add_column SELECT * FROM test_add_column_ab", 1);
         materializedRows = computeActual("SELECT x, a, b FROM test_add_column ORDER BY x");
         assertEquals(materializedRows.getMaterializedRows().get(0).getField(0), 123);
-        assertEquals(materializedRows.getMaterializedRows().get(0).getField(1), null);
-        assertEquals(materializedRows.getMaterializedRows().get(0).getField(2), null);
+        assertNull(materializedRows.getMaterializedRows().get(0).getField(1));
+        assertNull(materializedRows.getMaterializedRows().get(0).getField(2));
         assertEquals(materializedRows.getMaterializedRows().get(1).getField(0), 234);
         assertEquals(materializedRows.getMaterializedRows().get(1).getField(1), 111L);
-        assertEquals(materializedRows.getMaterializedRows().get(1).getField(2), null);
+        assertNull(materializedRows.getMaterializedRows().get(1).getField(2));
         assertEquals(materializedRows.getMaterializedRows().get(2).getField(0), 345);
         assertEquals(materializedRows.getMaterializedRows().get(2).getField(1), 222L);
         assertEquals(materializedRows.getMaterializedRows().get(2).getField(2), 33.3);
@@ -463,7 +509,7 @@ public abstract class AbstractTestDistributedQueries
         assertUpdate("INSERT INTO test_insert (a) VALUES (ARRAY[1234])", 1);
         assertQuery("SELECT a[1] FROM test_insert", "VALUES (null), (1234)");
 
-        assertQueryFails("INSERT INTO test_insert (b) VALUES (ARRAY[1.23E1])", "Insert query has mismatched column types: .*");
+        assertQueryFails("INSERT INTO test_insert (b) VALUES (ARRAY[1.23E1])", "line 1:37: Mismatch at column 1.*");
 
         assertUpdate("DROP TABLE test_insert");
     }
@@ -758,8 +804,9 @@ public abstract class AbstractTestDistributedQueries
         executeExclusively(() -> {
             assertUntilTimeout(
                     () -> assertEquals(
-                            queryManager.getAllQueryInfo()
-                                    .stream()
+                            queryManager.getQueries().stream()
+                                    .map(BasicQueryInfo::getQueryId)
+                                    .map(queryManager::getFullQueryInfo)
                                     .filter(info -> !info.isFinalQueryInfo())
                                     .collect(toList()),
                             ImmutableList.of()),

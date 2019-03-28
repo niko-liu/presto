@@ -109,6 +109,14 @@ public interface Connector
     }
 
     /**
+     * @return the analyze properties for this connector
+     */
+    default List<PropertyMetadata<?>> getAnalyzeProperties()
+    {
+        return emptyList();
+    }
+
+    /**
      * @return the table properties for this connector
      */
     default List<PropertyMetadata<?>> getTableProperties()
@@ -165,4 +173,9 @@ public interface Connector
      * have been returned from the connector.
      */
     default void shutdown() {}
+
+    default Set<ConnectorCapabilities> getCapabilities()
+    {
+        return emptySet();
+    }
 }

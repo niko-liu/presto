@@ -240,6 +240,7 @@ Field           Required  Type      Description
 ``name``        required  string    Name of the column in the Presto table.
 ``type``        required  string    Presto type of the column.
 ``dataFormat``  optional  string    Selects the column decoder for this field. Defaults to the default decoder for this row data format and column type.
+``dataSchema``  optional  string    The path or URL where the Avro schema resides. Used only for Avro decoder.
 ``mapping``     optional  string    Mapping information for the column. This is decoder specific, see below.
 ``formatHint``  optional  string    Sets a column specific format hint to the column decoder.
 ``hidden``      optional  boolean   Hides the column from ``DESCRIBE <table name>`` and ``SELECT *``. Defaults to ``false``.
@@ -258,6 +259,7 @@ The Kafka connector contains the following decoders:
 * ``raw`` - Kafka message is not interpreted, ranges of raw message bytes are mapped to table columns
 * ``csv`` - Kafka message is interpreted as comma separated message, and fields are mapped to table columns
 * ``json`` - Kafka message is parsed as JSON and JSON fields are mapped to table columns
+* ``avro`` - Kafka message is parsed based on an Avro schema and Avro fields are mapped to table columns
 
 .. note::
 
@@ -324,7 +326,7 @@ A sequence of bytes is read from input message and decoded according to either:
 
  * big-endian encoding (for integer types)
  * IEEE 754 format for (for ``DOUBLE``).
- 
+
 Length of decoded byte sequence is implied by the ``dataFormat``.
 
 For ``VARCHAR`` data type a sequence of bytes is interpreted according to UTF-8 encoding.
@@ -336,8 +338,12 @@ The CSV decoder converts the bytes representing a message or key into a
 string using UTF-8 encoding and then interprets the result as a CSV
 (comma-separated value) line.
 
-For fields, the ``type`` and ``mapping`` attributes must be defined.
-``dataFormat and ``formatHint`` are not supported and must be omitted.
+For fields, the ``type`` and ``mapping`` attributes must be defined:
+
+* ``type`` - Presto data type (see table below for list of supported data types)
+* ``mapping`` - the index of the field in the CSV record
+
+``dataFormat`` and ``formatHint`` are not supported and must be omitted.
 
 Table below lists supported Presto types which can be used in ``type`` and decoding scheme:
 
@@ -425,3 +431,57 @@ To convert values from JSON objects into Presto ``DATE``, ``TIME``, ``TIME WITH 
 
 For ``TIMESTAMP WITH TIME ZONE`` and ``TIME WITH TIME ZONE`` data types, if timezone information is present in decoded value, it will
 be used in Presto value. Otherwise result time zone will be set to ``UTC``.
+
+``avro`` Decoder
+^^^^^^^^^^^^^^^^
+
+The Avro decoder converts the bytes representing a message or key in
+Avro format based on a schema. The message must have the Avro schema embedded.
+Presto does not support schema-less Avro decoding.
+
+For key/message, using ``avro`` decoder, the ``dataSchema`` must be defined.
+This should point to the location of a valid Avro schema file of the message which needs to be decoded. This location can be a remote web server
+(e.g.: ``dataSchema: 'http://example.org/schema/avro_data.avsc'``) or local file system(e.g.: ``dataSchema: '/usr/local/schema/avro_data.avsc'``).
+The decoder will fail if this location is not accessible from the Presto coordinator node.
+
+For fields, the following attributes are supported:
+
+* ``name`` - Name of the column in the Presto table.
+* ``type`` - Presto type of column.
+* ``mapping`` - slash-separated list of field names to select a field from the Avro schema. If field specified in ``mapping`` does not exist in the original Avro schema then a read operation will return NULL.
+
+Table below lists supported Presto types which can be used in ``type`` for the equivalent Avro field type/s.
+
+===================================== =======================================
+Presto data type                      Allowed Avro data type
+===================================== =======================================
+``BIGINT``                            ``INT``, ``LONG``
+``DOUBLE``                            ``DOUBLE``, ``FLOAT``
+``BOOLEAN``                           ``BOOLEAN``
+``VARCHAR`` / ``VARCHAR(x)``          ``STRING``
+``VARBINARY``                         ``FIXED``, ``BYTES``
+``ARRAY``                             ``ARRAY``
+``MAP``                               ``MAP``
+===================================== =======================================
+
+Avro schema evolution
+#####################
+
+The Avro decoder supports schema evolution feature with backward compatibility. With backward compatibility,
+a newer schema can be used to read Avro data created with an older schema. Any change in the Avro schema must also be
+reflected in Presto's topic definition file. Newly added/renamed fields *must* have a default value in the Avro schema file.
+
+The schema evolution behavior is as follows:
+
+* Column added in new schema:
+  Data created with an older schema will produce a *default* value when table is using the new schema.
+
+* Column removed in new schema:
+  Data created with an older schema will no longer output the data from the column that was removed.
+
+* Column is renamed in the new schema:
+  This is equivalent to removing the column and adding a new one, and data created with an older schema
+  will produce a *default* value when table is using the new schema.
+
+* Changing type of column in the new schema:
+  If the type coercion is supported by Avro, then the conversion happens. An error is thrown for incompatible types.

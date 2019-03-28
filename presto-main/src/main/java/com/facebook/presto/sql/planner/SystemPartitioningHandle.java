@@ -29,17 +29,18 @@ import com.facebook.presto.spi.type.Type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 import static com.facebook.presto.SystemSessionProperties.getHashPartitionCount;
+import static com.facebook.presto.SystemSessionProperties.getMaxTasksPerStage;
 import static com.facebook.presto.spi.StandardErrorCode.NO_NODES_AVAILABLE;
 import static com.facebook.presto.util.Failures.checkCondition;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
 
 public final class SystemPartitioningHandle
@@ -146,7 +147,7 @@ public final class SystemPartitioningHandle
             nodes = nodeSelector.selectRandomNodes(1);
         }
         else if (partitioning == SystemPartitioning.FIXED) {
-            nodes = nodeSelector.selectRandomNodes(getHashPartitionCount(session));
+            nodes = nodeSelector.selectRandomNodes(min(getHashPartitionCount(session), getMaxTasksPerStage(session)));
         }
         else {
             throw new IllegalArgumentException("Unsupported plan distribution " + partitioning);
@@ -154,12 +155,7 @@ public final class SystemPartitioningHandle
 
         checkCondition(!nodes.isEmpty(), NO_NODES_AVAILABLE, "No worker nodes available");
 
-        ImmutableMap.Builder<Integer, Node> partitionToNode = ImmutableMap.builder();
-        for (int i = 0; i < nodes.size(); i++) {
-            Node node = nodes.get(i);
-            partitionToNode.put(i, node);
-        }
-        return new NodePartitionMap(partitionToNode.build(), split -> {
+        return new NodePartitionMap(nodes, split -> {
             throw new UnsupportedOperationException("System distribution does not support source splits");
         });
     }

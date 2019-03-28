@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.operator.aggregation;
 
+import com.facebook.presto.operator.aggregation.state.BooleanDistinctState;
 import com.facebook.presto.operator.aggregation.state.HyperLogLogState;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
@@ -60,7 +61,7 @@ public final class ApproximateCountDistinctAggregation
     @InputFunction
     @TypeParameter("T")
     public static void input(
-            @OperatorDependency(operator = XX_HASH_64, returnType = StandardTypes.BIGINT, argumentTypes = {"T"}) MethodHandle methodHandle,
+            @OperatorDependency(operator = XX_HASH_64, argumentTypes = {"T"}) MethodHandle methodHandle,
             @AggregationState HyperLogLogState state,
             @SqlType("T") long value,
             @SqlType(StandardTypes.DOUBLE) double maxStandardError)
@@ -81,7 +82,7 @@ public final class ApproximateCountDistinctAggregation
     @InputFunction
     @TypeParameter("T")
     public static void input(
-            @OperatorDependency(operator = XX_HASH_64, returnType = StandardTypes.BIGINT, argumentTypes = {"T"}) MethodHandle methodHandle,
+            @OperatorDependency(operator = XX_HASH_64, argumentTypes = {"T"}) MethodHandle methodHandle,
             @AggregationState HyperLogLogState state,
             @SqlType("T") double value,
             @SqlType(StandardTypes.DOUBLE) double maxStandardError)
@@ -102,7 +103,7 @@ public final class ApproximateCountDistinctAggregation
     @InputFunction
     @TypeParameter("T")
     public static void input(
-            @OperatorDependency(operator = XX_HASH_64, returnType = StandardTypes.BIGINT, argumentTypes = {"T"}) MethodHandle methodHandle,
+            @OperatorDependency(operator = XX_HASH_64, argumentTypes = {"T"}) MethodHandle methodHandle,
             @AggregationState HyperLogLogState state,
             @SqlType("T") Slice value,
             @SqlType(StandardTypes.DOUBLE) double maxStandardError)
@@ -118,6 +119,12 @@ public final class ApproximateCountDistinctAggregation
         }
         hll.addHash(hash);
         state.addMemoryUsage(hll.estimatedInMemorySize());
+    }
+
+    @InputFunction
+    public static void input(BooleanDistinctState state, @SqlType(StandardTypes.BOOLEAN) boolean value, @SqlType(StandardTypes.DOUBLE) double maxStandardError)
+    {
+        state.setByte((byte) (state.getByte() | (value ? 1 : 2)));
     }
 
     private static HyperLogLog getOrCreateHyperLogLog(HyperLogLogState state, double maxStandardError)
@@ -162,6 +169,12 @@ public final class ApproximateCountDistinctAggregation
         }
     }
 
+    @CombineFunction
+    public static void combineState(BooleanDistinctState state, BooleanDistinctState otherState)
+    {
+        state.setByte((byte) (state.getByte() | otherState.getByte()));
+    }
+
     @OutputFunction(StandardTypes.BIGINT)
     public static void evaluateFinal(@AggregationState HyperLogLogState state, BlockBuilder out)
     {
@@ -172,5 +185,11 @@ public final class ApproximateCountDistinctAggregation
         else {
             BIGINT.writeLong(out, hyperLogLog.cardinality());
         }
+    }
+
+    @OutputFunction(StandardTypes.BIGINT)
+    public static void evaluateFinal(BooleanDistinctState state, BlockBuilder out)
+    {
+        BIGINT.writeLong(out, Integer.bitCount(state.getByte()));
     }
 }

@@ -13,14 +13,13 @@
  */
 package com.facebook.presto.execution;
 
-import com.facebook.presto.OutputBuffers;
-import com.facebook.presto.OutputBuffers.OutputBufferId;
 import com.facebook.presto.Session;
-import com.facebook.presto.TaskSource;
 import com.facebook.presto.execution.StateMachine.StateChangeListener;
 import com.facebook.presto.execution.buffer.BufferResult;
 import com.facebook.presto.execution.buffer.LazyOutputBuffer;
 import com.facebook.presto.execution.buffer.OutputBuffer;
+import com.facebook.presto.execution.buffer.OutputBuffers;
+import com.facebook.presto.execution.buffer.OutputBuffers.OutputBufferId;
 import com.facebook.presto.memory.QueryContext;
 import com.facebook.presto.operator.PipelineContext;
 import com.facebook.presto.operator.PipelineStatus;
@@ -85,16 +84,30 @@ public class SqlTask
     private final AtomicReference<TaskHolder> taskHolderReference = new AtomicReference<>(new TaskHolder());
     private final AtomicBoolean needsPlan = new AtomicBoolean(true);
 
-    public SqlTask(
+    public static SqlTask createSqlTask(
             TaskId taskId,
             URI location,
             String nodeId,
             QueryContext queryContext,
             SqlTaskExecutionFactory sqlTaskExecutionFactory,
             ExecutorService taskNotificationExecutor,
-            final Function<SqlTask, ?> onDone,
+            Function<SqlTask, ?> onDone,
             DataSize maxBufferSize,
             CounterStat failedTasks)
+    {
+        SqlTask sqlTask = new SqlTask(taskId, location, nodeId, queryContext, sqlTaskExecutionFactory, taskNotificationExecutor, maxBufferSize);
+        sqlTask.initialize(onDone, failedTasks);
+        return sqlTask;
+    }
+
+    private SqlTask(
+            TaskId taskId,
+            URI location,
+            String nodeId,
+            QueryContext queryContext,
+            SqlTaskExecutionFactory sqlTaskExecutionFactory,
+            ExecutorService taskNotificationExecutor,
+            DataSize maxBufferSize)
     {
         this.taskId = requireNonNull(taskId, "taskId is null");
         this.taskInstanceId = UUID.randomUUID().toString();
@@ -103,7 +116,6 @@ public class SqlTask
         this.queryContext = requireNonNull(queryContext, "queryContext is null");
         this.sqlTaskExecutionFactory = requireNonNull(sqlTaskExecutionFactory, "sqlTaskExecutionFactory is null");
         requireNonNull(taskNotificationExecutor, "taskNotificationExecutor is null");
-        requireNonNull(onDone, "onDone is null");
         requireNonNull(maxBufferSize, "maxBufferSize is null");
 
         outputBuffer = new LazyOutputBuffer(
@@ -115,6 +127,13 @@ public class SqlTask
                 // because we haven't created the task context that holds the the memory context yet.
                 () -> queryContext.getTaskContextByTaskId(taskId).localSystemMemoryContext());
         taskStateMachine = new TaskStateMachine(taskId, taskNotificationExecutor);
+    }
+
+    // this is a separate method to ensure that the `this` reference is not leaked during construction
+    private void initialize(Function<SqlTask, ?> onDone, CounterStat failedTasks)
+    {
+        requireNonNull(onDone, "onDone is null");
+        requireNonNull(failedTasks, "failedTasks is null");
         taskStateMachine.addStateChangeListener(new StateChangeListener<TaskState>()
         {
             @Override
@@ -307,8 +326,7 @@ public class SqlTask
                 outputBuffer.getInfo(),
                 noMoreSplits,
                 taskStats,
-                needsPlan.get(),
-                taskStatus.getState().isDone());
+                needsPlan.get());
     }
 
     public ListenableFuture<TaskStatus> getTaskStatus(TaskState callersCurrentState)
@@ -489,6 +507,11 @@ public class SqlTask
         }
     }
 
+    /**
+     * Listener is always notified asynchronously using a dedicated notification thread pool so, care should
+     * be taken to avoid leaking {@code this} when adding a listener in a constructor. Additionally, it is
+     * possible notifications are observed out of order due to the asynchronous execution.
+     */
     public void addStateChangeListener(StateChangeListener<TaskState> stateChangeListener)
     {
         taskStateMachine.addStateChangeListener(stateChangeListener);

@@ -15,23 +15,24 @@ package com.facebook.presto.hive.metastore.thrift;
 
 import com.facebook.presto.hive.HiveType;
 import com.facebook.presto.hive.HiveUtil;
-import com.facebook.presto.hive.PartitionNotFoundException;
 import com.facebook.presto.hive.PartitionStatistics;
 import com.facebook.presto.hive.metastore.Database;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
 import com.facebook.presto.hive.metastore.HivePrivilegeInfo;
 import com.facebook.presto.hive.metastore.Partition;
+import com.facebook.presto.hive.metastore.PartitionWithStatistics;
 import com.facebook.presto.hive.metastore.PrincipalPrivileges;
 import com.facebook.presto.hive.metastore.Table;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaNotFoundException;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.TableNotFoundException;
+import com.facebook.presto.spi.security.PrestoPrincipal;
+import com.facebook.presto.spi.security.RoleGrant;
 import com.facebook.presto.spi.statistics.ColumnStatisticType;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.PrivilegeGrantInfo;
 
 import javax.inject.Inject;
 
@@ -43,9 +44,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.hive.metastore.MetastoreUtil.verifyCanDropColumn;
+import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.fromMetastoreApiTable;
+import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.isAvroTableWithSchemaSet;
 import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.toMetastoreApiDatabase;
-import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.toMetastoreApiPartition;
-import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.toMetastoreApiPrivilegeGrantInfo;
 import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.toMetastoreApiTable;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.util.Objects.requireNonNull;
@@ -77,7 +78,12 @@ public class BridgingHiveMetastore
     @Override
     public Optional<Table> getTable(String databaseName, String tableName)
     {
-        return delegate.getTable(databaseName, tableName).map(ThriftMetastoreUtil::fromMetastoreApiTable);
+        return delegate.getTable(databaseName, tableName).map(table -> {
+            if (isAvroTableWithSchemaSet(table)) {
+                return fromMetastoreApiTable(table, delegate.getFields(databaseName, tableName).get());
+            }
+            return fromMetastoreApiTable(table);
+        });
     }
 
     @Override
@@ -181,19 +187,6 @@ public class BridgingHiveMetastore
     }
 
     @Override
-    public synchronized void updateTableParameters(String databaseName, String tableName, Function<Map<String, String>, Map<String, String>> update)
-    {
-        org.apache.hadoop.hive.metastore.api.Table table = delegate.getTable(databaseName, tableName)
-                .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
-        Map<String, String> parameters = table.getParameters();
-        Map<String, String> updatedParameters = requireNonNull(update.apply(parameters), "updatedParameters is null");
-        if (!parameters.equals(updatedParameters)) {
-            table.setParameters(updatedParameters);
-            alterTable(databaseName, tableName, table);
-        }
-    }
-
-    @Override
     public void addColumn(String databaseName, String tableName, String columnName, HiveType columnType, String columnComment)
     {
         Optional<org.apache.hadoop.hive.metastore.api.Table> source = delegate.getTable(databaseName, tableName);
@@ -281,14 +274,9 @@ public class BridgingHiveMetastore
     }
 
     @Override
-    public void addPartitions(String databaseName, String tableName, List<Partition> partitions)
+    public void addPartitions(String databaseName, String tableName, List<PartitionWithStatistics> partitions)
     {
-        delegate.addPartitions(
-                databaseName,
-                tableName,
-                partitions.stream()
-                        .map(ThriftMetastoreUtil::toMetastoreApiPartition)
-                        .collect(Collectors.toList()));
+        delegate.addPartitions(databaseName, tableName, partitions);
     }
 
     @Override
@@ -298,57 +286,62 @@ public class BridgingHiveMetastore
     }
 
     @Override
-    public void alterPartition(String databaseName, String tableName, Partition partition)
+    public void alterPartition(String databaseName, String tableName, PartitionWithStatistics partition)
     {
-        delegate.alterPartition(databaseName, tableName, toMetastoreApiPartition(partition));
+        delegate.alterPartition(databaseName, tableName, partition);
     }
 
     @Override
-    public synchronized void updatePartitionParameters(String databaseName, String tableName, List<String> partitionValues, Function<Map<String, String>, Map<String, String>> update)
+    public void createRole(String role, String grantor)
     {
-        org.apache.hadoop.hive.metastore.api.Partition partition = delegate.getPartition(databaseName, tableName, partitionValues)
-                .orElseThrow(() -> new PartitionNotFoundException(new SchemaTableName(databaseName, tableName), partitionValues));
-        Map<String, String> parameters = partition.getParameters();
-        Map<String, String> updatedParameters = requireNonNull(update.apply(parameters), "updatedParameters is null");
-        if (!parameters.equals(updatedParameters)) {
-            partition.setParameters(updatedParameters);
-            delegate.alterPartition(databaseName, tableName, partition);
-        }
+        delegate.createRole(role, grantor);
     }
 
     @Override
-    public Set<String> getRoles(String user)
+    public void dropRole(String role)
     {
-        return delegate.getRoles(user);
+        delegate.dropRole(role);
     }
 
     @Override
-    public Set<HivePrivilegeInfo> getDatabasePrivileges(String user, String databaseName)
+    public Set<String> listRoles()
     {
-        return delegate.getDatabasePrivileges(user, databaseName);
+        return delegate.listRoles();
     }
 
     @Override
-    public Set<HivePrivilegeInfo> getTablePrivileges(String user, String databaseName, String tableName)
+    public void grantRoles(Set<String> roles, Set<PrestoPrincipal> grantees, boolean withAdminOption, PrestoPrincipal grantor)
     {
-        return delegate.getTablePrivileges(user, databaseName, tableName);
+        delegate.grantRoles(roles, grantees, withAdminOption, grantor);
     }
 
     @Override
-    public void grantTablePrivileges(String databaseName, String tableName, String grantee, Set<HivePrivilegeInfo> privileges)
+    public void revokeRoles(Set<String> roles, Set<PrestoPrincipal> grantees, boolean adminOptionFor, PrestoPrincipal grantor)
     {
-        Set<PrivilegeGrantInfo> privilegeGrantInfos = privileges.stream()
-                .map(privilege -> toMetastoreApiPrivilegeGrantInfo(grantee, privilege))
-                .collect(Collectors.toSet());
-        delegate.grantTablePrivileges(databaseName, tableName, grantee, privilegeGrantInfos);
+        delegate.revokeRoles(roles, grantees, adminOptionFor, grantor);
     }
 
     @Override
-    public void revokeTablePrivileges(String databaseName, String tableName, String grantee, Set<HivePrivilegeInfo> privileges)
+    public Set<RoleGrant> listRoleGrants(PrestoPrincipal principal)
     {
-        Set<PrivilegeGrantInfo> privilegeGrantInfos = privileges.stream()
-                .map(privilege -> toMetastoreApiPrivilegeGrantInfo(grantee, privilege))
-                .collect(Collectors.toSet());
-        delegate.revokeTablePrivileges(databaseName, tableName, grantee, privilegeGrantInfos);
+        return delegate.listRoleGrants(principal);
+    }
+
+    @Override
+    public void grantTablePrivileges(String databaseName, String tableName, PrestoPrincipal grantee, Set<HivePrivilegeInfo> privileges)
+    {
+        delegate.grantTablePrivileges(databaseName, tableName, grantee, privileges);
+    }
+
+    @Override
+    public void revokeTablePrivileges(String databaseName, String tableName, PrestoPrincipal grantee, Set<HivePrivilegeInfo> privileges)
+    {
+        delegate.revokeTablePrivileges(databaseName, tableName, grantee, privileges);
+    }
+
+    @Override
+    public Set<HivePrivilegeInfo> listTablePrivileges(String databaseName, String tableName, PrestoPrincipal principal)
+    {
+        return delegate.listTablePrivileges(databaseName, tableName, principal);
     }
 }

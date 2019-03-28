@@ -2,6 +2,11 @@
 Release 0.208
 =============
 
+.. warning::
+
+    This release has the potential for data loss in the Hive connector
+    when writing bucketed sorted tables.
+
 General Changes
 ---------------
 
@@ -13,6 +18,7 @@ General Changes
 * Make the cluster out of memory killer more resilient to memory accounting leaks.
   Previously, memory accounting leaks on the workers could effectively disable
   the out of memory killer.
+* Improve planning time for queries over tables with high column count.
 * Add a limit on the number of stages in a query.  The default is ``100`` and can
   be changed with the ``query.max-stage-count`` configuration property and the
   ``query_max_stage_count`` session property.
