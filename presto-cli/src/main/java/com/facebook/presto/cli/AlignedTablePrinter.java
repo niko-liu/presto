@@ -90,7 +90,7 @@ public class AlignedTablePrinter
                 String name = fieldNames.get(i);
                 writer.append(center(name, maxWidth[i], 1));
             }
-            writer.append('\n');
+            writer.append("\r\n");
 
             for (int i = 0; i < columns; i++) {
                 if (i > 0) {
@@ -98,7 +98,7 @@ public class AlignedTablePrinter
                 }
                 writer.append(repeat("-", maxWidth[i] + 2));
             }
-            writer.append('\n');
+            writer.append("\r\n");
         }
 
         for (List<?> row : rows) {
@@ -125,7 +125,7 @@ public class AlignedTablePrinter
                     }
                     writer.append(out);
                 }
-                writer.append('\n');
+                writer.append("\r\n");
             }
         }
 
