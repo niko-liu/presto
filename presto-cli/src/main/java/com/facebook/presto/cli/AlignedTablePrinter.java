@@ -66,6 +66,7 @@ public class AlignedTablePrinter
     public void printRows(List<List<?>> rows, boolean complete)
             throws IOException
     {
+        String lineFeed = System.lineSeparator();
         rowCount += rows.size();
         int columns = fieldNames.size();
 
@@ -90,7 +91,7 @@ public class AlignedTablePrinter
                 String name = fieldNames.get(i);
                 writer.append(center(name, maxWidth[i], 1));
             }
-            writer.append("\r\n");
+            writer.append(lineFeed);
 
             for (int i = 0; i < columns; i++) {
                 if (i > 0) {
@@ -98,7 +99,7 @@ public class AlignedTablePrinter
                 }
                 writer.append(repeat("-", maxWidth[i] + 2));
             }
-            writer.append("\r\n");
+            writer.append(lineFeed);
         }
 
         for (List<?> row : rows) {
@@ -125,7 +126,7 @@ public class AlignedTablePrinter
                     }
                     writer.append(out);
                 }
-                writer.append("\r\n");
+                writer.append(lineFeed);
             }
         }
 
