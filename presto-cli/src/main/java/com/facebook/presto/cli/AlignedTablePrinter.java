@@ -91,7 +91,10 @@ public class AlignedTablePrinter
 
             for (int i = 0; i < columns; i++) {
                 if (i > 0) {
-                    writer.append('|');
+                    if (isWin)
+                        outResults.append("|");
+                    else
+                        writer.append('|');
                 }
                 String name = fieldNames.get(i);
 	            String s = center(name, maxWidth[i], 1);
