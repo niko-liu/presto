@@ -38,10 +38,10 @@ public class ConsolePrinter
     public void reprintLine(String line)
     {
         if (isRealTerminal()) {
-            out.print(ansi().eraseLine(Erase.ALL).a(line).a('\n').toString());
+            out.print(ansi().eraseLine(Erase.ALL).a(line).a(System.lineSeparator()).toString());
         }
         else {
-            out.print('\r' + line);
+            out.print(System.lineSeparator() + line);
         }
         out.flush();
         lines++;
@@ -54,7 +54,7 @@ public class ConsolePrinter
                 out.print(ansi().cursorUp(lines).toString());
             }
             else {
-                out.print('\r');
+                out.print(System.lineSeparator());
             }
             out.flush();
             lines = 0;
@@ -68,7 +68,7 @@ public class ConsolePrinter
                 out.print(ansi().cursorUp(lines).eraseScreen(Erase.FORWARD).toString());
             }
             else {
-                out.print('\r');
+                out.print(System.lineSeparator());
             }
             out.flush();
             lines = 0;

@@ -67,8 +67,13 @@ public class AlignedTablePrinter
             throws IOException
     {
         String lineFeed = System.lineSeparator();
+        boolean isWin = false;
+        if (lineFeed.equals("\r\n")) {
+        	isWin = true;
+        }
         rowCount += rows.size();
         int columns = fieldNames.size();
+        StringBuilder outResults = new StringBuilder();
 
         int[] maxWidth = new int[columns];
         for (int i = 0; i < columns; i++) {
@@ -89,17 +94,34 @@ public class AlignedTablePrinter
                     writer.append('|');
                 }
                 String name = fieldNames.get(i);
-                writer.append(center(name, maxWidth[i], 1));
+	            String s = center(name, maxWidth[i], 1);
+	            if (isWin)
+                    outResults.append(s);
+	            else
+                    writer.append(s);
             }
-            writer.append(lineFeed);
+            if (isWin)
+	            outResults.append(lineFeed);
+            else
+                writer.append(lineFeed);
 
             for (int i = 0; i < columns; i++) {
                 if (i > 0) {
-                    writer.append('+');
+                	if (isWin)
+                	    outResults.append('+');
+                	else
+                        writer.append('+');
                 }
-                writer.append(repeat("-", maxWidth[i] + 2));
+	            String repeat = repeat("-", maxWidth[i] + 2);
+                if (isWin)
+                    outResults.append(repeat);
+                else
+	                writer.append(repeat);
             }
-            writer.append(lineFeed);
+            if (isWin)
+                outResults.append(lineFeed);
+            else
+                writer.append(lineFeed);
         }
 
         for (List<?> row : rows) {
@@ -115,7 +137,10 @@ public class AlignedTablePrinter
             for (int line = 0; line < maxLines; line++) {
                 for (int column = 0; column < columns; column++) {
                     if (column > 0) {
-                        writer.append('|');
+                    	if (isWin)
+                    		outResults.append("|");
+                    	else
+                            writer.append('|');
                     }
                     List<String> lines = columnLines.get(column);
                     String s = (line < lines.size()) ? lines.get(line) : "";
@@ -124,13 +149,20 @@ public class AlignedTablePrinter
                     if ((!complete || (rowCount > 1)) && ((line + 1) < lines.size())) {
                         out = out.substring(0, out.length() - 1) + "+";
                     }
-                    writer.append(out);
+                    if (isWin)
+                        outResults.append(out);
+                    else
+                        writer.append(out);
                 }
-                writer.append(lineFeed);
+                if (isWin)
+	                outResults.append(lineFeed);
+                else
+                    writer.append(lineFeed);
             }
         }
 
         writer.flush();
+	    System.out.println(outResults.toString());
     }
 
     static String formatValue(Object o)

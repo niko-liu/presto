@@ -36,6 +36,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.io.Writer;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -319,7 +320,13 @@ public class Query
 
     private static Writer createWriter(OutputStream out)
     {
-        return new OutputStreamWriter(out, UTF_8);
+        String lineSeparator = System.lineSeparator();
+        if (lineSeparator.equals("\r\n")) {
+            return new OutputStreamWriter(out, Charset.forName("GBK"));
+        } else {
+            return new OutputStreamWriter(out, UTF_8);
+        }
+
     }
 
     @Override

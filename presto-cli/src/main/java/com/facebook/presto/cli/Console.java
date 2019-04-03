@@ -243,7 +243,7 @@ public class Console
                 }
 
                 // not a command, add line to buffer
-                buffer.append(line).append("\n");
+                buffer.append(line).append(System.lineSeparator());
 
                 // execute any complete statements
                 String sql = buffer.toString();
@@ -262,7 +262,7 @@ public class Console
                 buffer = new StringBuilder();
                 String partial = splitter.getPartialStatement();
                 if (!partial.isEmpty()) {
-                    buffer.append(partial).append('\n');
+                    buffer.append(partial).append(System.lineSeparator());
                 }
             }
         }
